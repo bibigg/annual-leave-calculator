@@ -81,7 +81,7 @@ def download_excel(df1, df2, df3):
 def download_pdf(df1, df2, df3):
     pdf = FPDF()
     pdf.add_page()
-    pdf.add_font('Nanum', '', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf', uni=True)
+    pdf.add_font("Nanum", "", "fonts/NanumGothic-Regular.ttf", uni=True)
     pdf.set_font('Nanum', size=12)
 
     pdf.cell(0, 10, "연차 계산 결과", ln=True)
