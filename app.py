@@ -1,151 +1,161 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
-import io
+from datetime import datetime, timedelta
+from io import BytesIO
+from fpdf import FPDF
 
-# ---------------------------------------
-# 유틸 함수
-# ---------------------------------------
+st.set_page_config(page_title="연차 자동 계산기", layout="wide")
 
-# 두 날짜 사이 개월 수 계산
-def months_between(start_date, end_date):
-    return (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
-
-# 입사일 기준 연차 총합 계산 (51개월 → 73개 등)
-def calc_total_leave_by_join(months):
-    total = 0
-    current = date.today().replace(day=1)
-
-    # 1년 미만 : 월 1개씩
-    if months < 12:
-        return months
-
-    # 1년차 : 11개
-    total += 11
-
-    # 2년차부터 → 근속연수 기반 계산
-    year_num = 2
-    remaining_years = (months // 12) - 1
-
-    while remaining_years > 0:
-        if year_num == 2:
-            total += 15
-        elif year_num >= 3:
-            total += 16
-        year_num += 1
-        remaining_years -= 1
-
-    return total
-
-# 회계연도 기준 연차 계산
-def calc_total_leave_fiscal(join_date, end_date):
-    fiscal_year = join_date.year
-    current_year = end_date.year
-    total = 0
-
-    while fiscal_year <= current_year:
-        fy_start = date(fiscal_year, 1, 1)
-        fy_end = date(fiscal_year, 12, 31)
-
-        if fiscal_year == join_date.year:
-            work_months = months_between(join_date, fy_end)
-            work_months += 1 if join_date.day <= fy_end.day else 0
-        elif fiscal_year == end_date.year:
-            work_months = months_between(fy_start, end_date)
-        else:
-            work_months = 12
-
-        if work_months < 12:
-            leave = min(work_months, 11)
-        else:
-            if fiscal_year - join_date.year == 1:
-                leave = 15
-            else:
-                leave = 16
-
-        total += leave
-        fiscal_year += 1
-
-    return total
-
-# ---------------------------------------
-# UI – 모바일 최적화 CSS
-# ---------------------------------------
-
+# 스타일 (B버전 깔끔 UI)
 st.markdown("""
-<style>
-button, input, label, select {
-    font-size: 18px !important;
-}
-</style>
+    <style>
+        .result-box {
+            padding: 20px;
+            border-radius: 12px;
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            margin-top: 20px;
+        }
+        .section-title {
+            font-size: 20px;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+    </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------
-# UI 입력
-# ---------------------------------------
 
-st.title("📘 연차 자동 계산기")
+# ------------------------------------
+# 연차 계산 함수
+# ------------------------------------
+def calculate_leave(start_date, end_date):
+    months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
 
-with st.form("input_form"):
-    join_date = st.date_input("입사일을 선택하세요", value=date(2021, 1, 1))
-    end_date = st.date_input("퇴직일 (없으면 오늘 기준 계산)", value=date.today())
+    data = []
+    fiscal_data = []
 
-    submitted = st.form_submit_button("연차 계산하기")
+    # 입사일 기준 발생일자(매년)
+    for i in range(1, 6):
+        year = start_date.year + (i - 1)
+        date = datetime(year, start_date.month, start_date.day)
+        amount = 11 + (i - 1) if i > 1 else 11
+        data.append([f"{i}년차", date.strftime("%Y-%m-%d"), amount])
 
-# ---------------------------------------
-# 계산
-# ---------------------------------------
+    df_in = pd.DataFrame(data, columns=["근속년수", "발생일자", "발생 연차"])
 
-if submitted:
+    # 회계연도 기준 발생일자(매년 1월)
+    for i in range(1, 6):
+        fiscal_date = datetime(start_date.year + (i - 1), 1, 1)
+        amount_f = 11 + (i - 1)
+        fiscal_data.append([f"{i}년차", fiscal_date.strftime("%Y-%m-%d"), amount_f])
 
-    # 기본 계산
-    months = months_between(join_date, end_date)
+    df_fiscal = pd.DataFrame(fiscal_data, columns=["근속년수", "발생일자", "발생 연차"])
 
-    leave_join = calc_total_leave_by_join(months)
-    leave_fiscal = calc_total_leave_fiscal(join_date, end_date)
+    total_in = df_in["발생 연차"].sum()
+    total_fiscal = df_fiscal["발생 연차"].sum()
 
-    # 결과 테이블
-    df = pd.DataFrame({
-        "구분": ["근속개월", "입사일 기준 연차", "회계연도 기준 연차"],
-        "값": [months, leave_join, leave_fiscal]
+    summary = pd.DataFrame({
+        "구분": ["입사일 기준 연차 합계", "회계연도 기준 연차 합계"],
+        "값": [total_in, total_fiscal]
     })
 
-    st.subheader("결과")
-    st.table(df)
+    return months, df_in, df_fiscal, summary
 
-    # ---------------------------------------
-    # 엑셀 다운로드
-    # ---------------------------------------
-    excel_buffer = io.BytesIO()
-    df.to_excel(excel_buffer, index=False)
+
+# ------------------------------------
+# 엑셀 다운로드
+# ------------------------------------
+def download_excel(df1, df2, df3):
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        df1.to_excel(writer, sheet_name='입사일 기준', index=False)
+        df2.to_excel(writer, sheet_name='회계연도 기준', index=False)
+        df3.to_excel(writer, sheet_name='요약', index=False)
+    return buffer.getvalue()
+
+
+# ------------------------------------
+# PDF 다운로드 (전체 테이블 A버전)
+# ------------------------------------
+def download_pdf(df1, df2, df3):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.add_font('Nanum', '', '/usr/share/fonts/truetype/nanum/NanumGothic.ttf', uni=True)
+    pdf.set_font('Nanum', size=12)
+
+    pdf.cell(0, 10, "연차 계산 결과", ln=True)
+
+    def add_table(df, title):
+        pdf.ln(5)
+        pdf.set_font('Nanum', size=11)
+        pdf.cell(0, 8, title, ln=True)
+        pdf.set_font('Nanum', size=9)
+
+        col_width = 45
+        for col in df.columns:
+            pdf.cell(col_width, 8, col, border=1)
+        pdf.ln()
+
+        for row in df.itertuples(index=False):
+            for cell in row:
+                pdf.cell(col_width, 8, str(cell), border=1)
+            pdf.ln()
+
+    add_table(df1, "[입사일 기준]")
+    add_table(df2, "[회계연도 기준]")
+    add_table(df3, "[요약]")
+
+    return pdf.output(dest='S').encode('latin-1')
+
+
+# ------------------------------------
+# UI 시작
+# ------------------------------------
+st.title("💼 연차 자동 계산기")
+
+start = st.date_input("입사일을 선택하세요", value=datetime(2021, 1, 1))
+end = st.date_input("퇴직일 (없으면 오늘 기준 계산)", value=datetime.today())
+
+if st.button("연차 계산하기"):
+    months, df_in, df_fiscal, df_summary = calculate_leave(start, end)
+
+    st.success("연차 계산이 완료되었습니다 😄")
+
+    st.markdown('<div class="result-box">', unsafe_allow_html=True)
+
+    # 근속개월
+    st.markdown('<div class="section-title">근속 개월</div>', unsafe_allow_html=True)
+    st.metric(label="총 근속개월", value=f"{months}개월")
+
+    # 입사일 기준
+    st.markdown('<div class="section-title">입사일 기준 연차</div>', unsafe_allow_html=True)
+    st.dataframe(df_in, use_container_width=True)
+
+    # 회계연도 기준
+    st.markdown('<div class="section-title">회계연도 기준 연차</div>', unsafe_allow_html=True)
+    st.dataframe(df_fiscal, use_container_width=True)
+
+    # 요약
+    st.markdown('<div class="section-title">요약</div>', unsafe_allow_html=True)
+    st.dataframe(df_summary, use_container_width=True)
+
+    # 다운로드 버튼
+    excel_file = download_excel(df_in, df_fiscal, df_summary)
+    pdf_file = download_pdf(df_in, df_fiscal, df_summary)
+
     st.download_button(
         label="📥 엑셀 파일 다운로드",
-        data=excel_buffer.getvalue(),
-        file_name="annual_leave.xlsx",
+        data=excel_file,
+        file_name="연차계산.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # ---------------------------------------
-    # PDF 다운로드 (HTML → PDF 변환 없이 텍스트 PDF)
-    # ---------------------------------------
-    pdf_content = f"""
-연차 계산 결과
-
-입사일: {join_date}
-퇴직일: {end_date}
-
-근속개월: {months}
-입사일 기준 연차: {leave_join}
-회계연도 기준 연차: {leave_fiscal}
-"""
-
-    pdf_bytes = pdf_content.encode("utf-8")
-
     st.download_button(
         label="📄 PDF 다운로드",
-        data=pdf_bytes,
-        file_name="annual_leave.pdf",
+        data=pdf_file,
+        file_name="연차계산.pdf",
         mime="application/pdf"
     )
 
-    st.success("연차 계산이 완료되었습니다 😊")
+    st.markdown('</div>', unsafe_allow_html=True)
