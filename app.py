@@ -159,4 +159,72 @@ if st.button("연차 계산하기"):
     )
 
     st.markdown('</div>', unsafe_allow_html=True)
+from fpdf import FPDF
+
+class PDF(FPDF):
+    def header(self):
+        self.set_font("Nanum", size=16)
+        self.set_text_color(40, 40, 40)
+        self.cell(0, 10, "연차 계산 결과", ln=True)
+        self.ln(4)
+
+    def section_title(self, title):
+        self.set_font("Nanum", size=13)
+        self.set_text_color(60, 60, 60)
+        self.ln(2)
+        self.cell(0, 8, title, ln=True)
+        self.set_draw_color(220, 220, 220)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(4)
+
+    def modern_table(self, headers, rows):
+        self.set_font("Nanum", size=11)
+        self.set_draw_color(220, 220, 220)
+
+        col_widths = [40, 70, 40]
+
+        # 헤더
+        self.set_fill_color(245, 245, 245)
+        self.set_text_color(80, 80, 80)
+        for i, h in enumerate(headers):
+            self.cell(col_widths[i], 10, h, border=0, fill=True, align="L")
+        self.ln(10)
+
+        # 데이터
+        self.set_text_color(30, 30, 30)
+        for row in rows:
+            for i, item in enumerate(row):
+                self.cell(col_widths[i], 8, str(item), border="B", align="L")
+            self.ln(8)
+
+        self.ln(6)
+
+    def summary_box(self, summary):
+        self.set_font("Nanum", size=12)
+        self.set_draw_color(200, 200, 200)
+        self.set_fill_color(248, 248, 248)
+        self.rect(10, self.get_y(), 190, 20, style="DF")
+
+        self.set_xy(15, self.get_y() + 5)
+        text = f"입사일 기준 연차: {summary[0][1]}   |   회계연도 기준 연차: {summary[1][1]}"
+        self.cell(0, 10, text)
+
+def download_pdf(df_in, df_fiscal, df_summary):
+    pdf = PDF()
+    pdf.add_page()
+    pdf.add_font("Nanum", "", "fonts/NanumGothic-Regular.ttf", uni=True)
+
+    # 1) 입사일 기준
+    pdf.section_title("입사일 기준")
+    pdf.modern_table(["근속년수", "발생일자", "발생 연차"], df_in.values.tolist())
+
+    # 2) 회계연도 기준
+    pdf.section_title("회계연도 기준")
+    pdf.modern_table(["근속년수", "발생일자", "발생 연차"], df_fiscal.values.tolist())
+
+    # 3) 요약 카운트 박스
+    pdf.section_title("요약")
+    pdf.summary_box(df_summary.values.tolist())
+
+    return pdf.output(dest="S").encode("latin1")
 
