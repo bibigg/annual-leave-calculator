@@ -148,24 +148,22 @@ class PDF(FPDF):
         text = f"입사일 기준 연차: {summary[0][1]}   |   회계연도 기준 연차: {summary[1][1]}"
         self.cell(0, 10, text)
 
-def download_pdf(df_in, df_fiscal, df_summary):
+def download_pdf(df1, df2, df3):
     pdf = PDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
     pdf.add_page()
-    pdf.add_font("Nanum", "", "fonts/NanumGothic-Regular.ttf", uni=True)
 
-    # 1) 입사일 기준
     pdf.section_title("입사일 기준")
-    pdf.modern_table(["근속년수", "발생일자", "발생 연차"], df_in.values.tolist())
+    pdf.modern_table(df1.columns, df1.values)
 
-    # 2) 회계연도 기준
     pdf.section_title("회계연도 기준")
-    pdf.modern_table(["근속년수", "발생일자", "발생 연차"], df_fiscal.values.tolist())
+    pdf.modern_table(df2.columns, df2.values)
 
-    # 3) 요약 카운트 박스
     pdf.section_title("요약")
-    pdf.summary_box(df_summary.values.tolist())
-    
-    return pdf.output(dest="S").encode("latin1")
+    pdf.modern_table(df3.columns, df3.values)
+
+    return pdf.output(dest='S').encode('latin-1')
 
 # ------------------------------------
 # UI 시작
