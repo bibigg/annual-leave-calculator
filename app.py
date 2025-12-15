@@ -81,6 +81,11 @@ def download_excel(df1, df2, df3):
 from fpdf import FPDF
 
 class PDF(FPDF):
+    def __init__(self):
+        super().__init__()
+        # 폰트 등록을 미리 해줘야 header()에서 오류가 안 남
+        self.add_font("Nanum", "", "fonts/NanumGothic-Regular.ttf", uni=True)
+
     def header(self):
         self.set_font("Nanum", size=16)
         self.set_text_color(40, 40, 40)
@@ -90,7 +95,6 @@ class PDF(FPDF):
     def section_title(self, title):
         self.set_font("Nanum", size=13)
         self.set_text_color(60, 60, 60)
-        self.ln(2)
         self.cell(0, 8, title, ln=True)
         self.set_draw_color(220, 220, 220)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -101,6 +105,22 @@ class PDF(FPDF):
         self.set_draw_color(220, 220, 220)
 
         col_widths = [40, 70, 40]
+
+        # Header
+        self.set_fill_color(245, 245, 245)
+        self.set_text_color(80, 80, 80)
+
+        for i, h in enumerate(headers):
+            self.cell(col_widths[i], 10, h, border=0, fill=True, align="L")
+        self.ln(10)
+
+        # Rows
+        self.set_text_color(30, 30, 30)
+        for row in rows:
+            for i, val in enumerate(row):
+                self.cell(col_widths[i], 10, str(val), border=0, align="L")
+            self.ln(8)
+        self.ln(4)
 
         # 헤더
         self.set_fill_color(245, 245, 245)
